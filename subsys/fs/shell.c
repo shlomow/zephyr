@@ -334,6 +334,66 @@ static int cmd_read(const struct shell *shell, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_dump(const struct shell *shell, size_t argc, char **argv)
+{
+	char path[MAX_PATH_LEN];
+	struct fs_dirent dirent;
+	struct fs_file_t file;
+	int count;
+	int err;
+
+	create_abs_path(argv[1], path, sizeof(path));
+
+	if (argc > 2) {
+		count = strtol(argv[2], NULL, 0);
+		if (count <= 0) {
+			count = INT_MAX;
+		}
+	} else {
+		count = INT_MAX;
+	}
+
+	err = fs_stat(path, &dirent);
+	if (err) {
+		shell_error(shell, "Failed to obtain file %s (err: %d)",
+			    path, err);
+		return -ENOEXEC;
+	}
+
+	if (dirent.type != FS_DIR_ENTRY_FILE) {
+		shell_error(shell, "Note a file %s", path);
+		return -ENOEXEC;
+	}
+
+	fs_file_t_init(&file);
+	err = fs_open(&file, path, FS_O_CREATE | FS_O_RDWR);
+	if (err) {
+		shell_error(shell, "Failed to open %s (%d)", path, err);
+		return -ENOEXEC;
+	}
+
+	while (count > 0) {
+		ssize_t read;
+		uint8_t buf[16];
+		int i;
+
+		read = fs_read(&file, buf, MIN(count, sizeof(buf)));
+		if (read <= 0) {
+			break;
+		}
+
+		for (i = 0; i < read; i++) {
+			shell_fprintf(shell, SHELL_NORMAL, "%c", buf[i]);
+		}
+
+		count -= read;
+	}
+
+	fs_close(&file);
+
+	return 0;
+}
+
 static int cmd_statvfs(const struct shell *shell, size_t argc, char **argv)
 {
 	int err;
@@ -520,6 +580,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs,
 #endif
 	SHELL_CMD(pwd, NULL, "Print current working directory", cmd_pwd),
 	SHELL_CMD_ARG(read, NULL, "Read from file", cmd_read, 2, 255),
+	SHELL_CMD_ARG(dump, NULL, "Dump content of file", cmd_dump, 2, 0),
 	SHELL_CMD_ARG(rm, NULL, "Remove file", cmd_rm, 2, 0),
 	SHELL_CMD_ARG(statvfs, NULL, "Show file system state", cmd_statvfs, 2, 0),
 	SHELL_CMD_ARG(trunc, NULL, "Truncate file", cmd_trunc, 2, 255),
